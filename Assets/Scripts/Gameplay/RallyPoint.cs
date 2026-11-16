@@ -110,36 +110,28 @@ public class RallyPoint : MonoBehaviour
     {
         Debug.Log("Enemies : " + EnemiesInRange.Count + "  Troops : " + currentArmy.Count);
         
+        if (EnemiesInRange.Count == 0)
+        {
+            foreach (OurUnit unit in currentArmy)
+            {
+                if (unit != null && !unit.IsDead) unit.StopAttack();
+            }
+            NotifyArmyOnCurrentLocation();
+            return;
+        }
+
         foreach (OurUnit unit in currentArmy)
         {
-            // Skip dead units
-            if (unit == null || unit.status == Utility.UnitStatus.Dead) continue;
+            if (unit == null || unit.IsDead) continue;
 
-            if (EnemiesInRange.Count > 0)
-            {
-                // Find the closest enemy to this unit
-                GameObject closestEnemy = FindClosestEnemy(unit.transform.position);
-                
-                if (closestEnemy == null) continue;
+            GameObject closestEnemy = FindClosestEnemy(unit.transform.position);
+            if (closestEnemy == null) continue;
 
-                OurUnit enemyUnit = closestEnemy.GetComponent<OurUnit>();
-                if (enemyUnit != null && enemyUnit.AvailableAttackerPosition(unit.transform) != null)
-                {
-                    unit.Attack(closestEnemy);
-                }
-                else if (closestEnemy.GetComponent<Structure>() != null)
-                {
-                    unit.Attack(closestEnemy);
-                }
+            unit.Attack(closestEnemy);
 
-                // Move toward the closest enemy with reduced pathfinding updates
-                unit.GetComponent<UnitMovement>().SetPathDestination(closestEnemy.transform.position);
-            }
-            else
-            {
-                unit.StopAttack();
-                NotifyArmyOnCurrentLocation();
-            }
+            // No free attack slot (or a structure): at least walk toward it.
+            if (!unit.IsAttacking && unit.TryGetComponent<UnitMovement>(out var movement))
+                movement.MoveTo(closestEnemy.transform.position);
         }
     }
 
@@ -231,7 +223,7 @@ public class RallyPoint : MonoBehaviour
     }
 
     private void NotifyUnitOnLocation(OurUnit unit, Vector2 location) {
-        if (unit && unit.TryGetComponent<UnitMovement>(out var unit_movement)) unit_movement.SetPathDestination(location);
+        if (unit && !unit.IsDead && unit.TryGetComponent<UnitMovement>(out var unit_movement)) unit_movement.MoveTo(location);
     }
 
     private void NotifyArmyOnCurrentLocation() {

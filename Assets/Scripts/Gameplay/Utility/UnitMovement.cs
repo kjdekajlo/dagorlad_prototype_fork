@@ -1,199 +1,117 @@
-using System.Collections;
-using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 using UnityEngine.AI;
 
+/// <summary>
+/// Thin wrapper around NavMeshAgent for 2D units.
+///
+/// Three modes:
+///  - Idle:    walk to the last point given via MoveTo(), then stand.
+///  - Follow:  keep chasing a moving Transform (e.g. an attack slot on an enemy).
+///             While HoldPosition is true the destination is not refreshed.
+///  - Stopped: agent halted (in melee range, dead, ...).
+/// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class UnitMovement : MonoBehaviour
 {
-    public enum Method { Time, Speed, SpeedWithTarget, SpeedWithTargetAndRange, Attacking, NoMovement, SpeedWithFormation }
-    public Method CurrentMethod;
-    private Method previousMethod; // for changes in the inspector
+    public enum Mode { Idle, Follow, Stopped }
 
-    public float TimeSpan;
+    [SerializeField] private Mode mode = Mode.Idle;
+    public Mode CurrentMode => mode;
+
+    /// <summary>Set from the MoveSpeed stat by StatsManager. Not applied to the agent yet (agent speed is fixed).</summary>
     public float Speed;
 
-    public bool IsLocked = false;
-    public Vector2 Destination;
+    /// <summary>While following, freeze destination updates (used during an attack swing).</summary>
+    public bool HoldPosition;
 
-    public bool hasDestinations;
-    public List<GameObject> Destinations = new();
-    public Queue<Vector2> DestinationsQueue = new();
+    public Transform FollowTarget { get; private set; }
 
-    public Transform TransformDestination;
-    public float StartTime;
-    public Vector2 StartPosition;
+    // Agent tuning
+    private const float AGENT_SPEED = 1f;
+    private const float AGENT_ACCELERATION = 6f;
+    private const float AGENT_STOPPING_DISTANCE = 0.2f;
+    private const int AGENT_AVOIDANCE_PRIORITY = 50;
 
-    public float range;
-    public float rangeMin;
-    public float TimeRandomRange;
-    float timer;
-    Vector2 currentRandomTargetPosition;
-    public Vector2 offsetRallyPoint;
-    public Vector2 offsetedTransformDestination;
+    // Path update throttling (reduces jitter from re-pathing every tick)
+    private const float REPATH_MIN_DISTANCE = 0.3f;
+    private const float REPATH_MIN_INTERVAL = 0.15f;
 
-    // Nav Mesh and pathfinding
-    NavMeshAgent navMeshAgent;
+    private NavMeshAgent agent;
+    private Vector2 lastDestination;
+    private float lastDestinationTime = float.NegativeInfinity;
 
-    bool isPathDestinationSet = true;
-    
-    // Smooth movement variables
-    private Vector2 lastFramePosition;
-    private Vector2 smoothVelocity;
-    private const float VELOCITY_SMOOTHING = 0.15f;
-    
-    // Pathfinding stability
-    private Vector2 lastSetDestination;
-    private float lastDestinationUpdateTime = 0f;
-    private const float DESTINATION_UPDATE_THRESHOLD = 0.3f; // Minimum distance to update path (increased to reduce jitter)
-    private const float DESTINATION_UPDATE_TIME_THRESHOLD = 0.15f; // Minimum time between updates
-
-    void Start()
+    private void Awake()
     {
-        // setup mav mesh and pathfinding
-        if ((navMeshAgent = GetComponent<NavMeshAgent>()) != null) {
-            navMeshAgent.updateRotation = false;
-            navMeshAgent.updateUpAxis = false;
-            // Improve NavMeshAgent smoothness and reduce jitter
-            navMeshAgent.acceleration = 6f; // Reduced for slower acceleration
-            navMeshAgent.angularSpeed = 0f;
-            navMeshAgent.stoppingDistance = 0.2f; // Slightly larger stopping distance
-            navMeshAgent.speed = 1f;
-            navMeshAgent.avoidancePriority = 50; // Standard priority
+        agent = GetComponent<NavMeshAgent>();
+        if (agent != null)
+        {
+            agent.updateRotation = false;
+            agent.updateUpAxis = false;
+            agent.angularSpeed = 0f;
+            agent.speed = AGENT_SPEED;
+            agent.acceleration = AGENT_ACCELERATION;
+            agent.stoppingDistance = AGENT_STOPPING_DISTANCE;
+            agent.avoidancePriority = AGENT_AVOIDANCE_PRIORITY;
         }
-        lastFramePosition = (Vector2)transform.position;
-        lastSetDestination = (Vector2)transform.position;
+        lastDestination = transform.position;
     }
 
     private void FixedUpdate()
     {
-        if (TransformDestination == null) {
-            Debug.LogError("why you dont put transform destination??" + gameObject.name);
-            return;
-        }
+        if (mode != Mode.Follow || HoldPosition) return;
 
-        if (CurrentMethod == Method.NoMovement) {
-            ClearPathDestination();
-            return;
-        }
-
-        // computation heavy
-        //switch (CurrentMethod) {
-        //    case Method.SpeedWithTargetAndRange:
-        //        CalculateRandomPosition_SpeedWithTargetAndRange();
-        //        break;
-
-        //    case Method.SpeedWithFormation:
-        //        CalculateRandomPosition_SpeedWithFormation();
-        //        break;
-        //}
-
-        // Only move when destination is set
-        if (!isPathDestinationSet) return;
-
-        switch (CurrentMethod)
+        if (FollowTarget == null)
         {
-            case Method.SpeedWithTarget:
-                SetPathDestination((Vector2)TransformDestination.position);
-                break;
-
-            case Method.Attacking:
-                if(!IsLocked) SetPathDestination((Vector2)TransformDestination.position);
-                break;
+            // Target vanished (died / destroyed) - stand where we are.
+            mode = Mode.Idle;
+            return;
         }
+
+        SetDestination(FollowTarget.position, force: false);
     }
 
-    private void CalculateRandomPosition_SpeedWithTargetAndRange() {
-        if (Vector2.Distance((Vector2)transform.position, (Vector2)navMeshAgent.destination) <= 0.75) {
-            Debug.Log("sd");
-            if (timer < Time.time) {
-                var signX = UnityEngine.Random.Range(0, 2) * 2 - 1;
-                var signY = UnityEngine.Random.Range(0, 2) * 2 - 1;
-                currentRandomTargetPosition = new Vector2(
-                    UnityEngine.Random.Range(navMeshAgent.destination.x + rangeMin * signX, navMeshAgent.destination.x + range * signX),
-                    UnityEngine.Random.Range(navMeshAgent.destination.y + rangeMin * signY, navMeshAgent.destination.y + range * signY));
-                timer = Time.time + TimeRandomRange;
-
-                SetPathDestination(currentRandomTargetPosition);
-            }
-        } else {
-            currentRandomTargetPosition = (Vector2)navMeshAgent.destination;
-        }
-    }
-
-    private void CalculateRandomPosition_SpeedWithFormation() {
-        offsetedTransformDestination = (Vector2)navMeshAgent.destination + offsetRallyPoint;
-
-        if (Vector2.Distance(transform.position, offsetedTransformDestination) <= range * 1.42f) {
-            if (timer < Time.time) {
-                var signX = UnityEngine.Random.Range(0, 2) * 2 - 1;
-                var signY = UnityEngine.Random.Range(0, 2) * 2 - 1;
-                currentRandomTargetPosition = new Vector2(
-                    UnityEngine.Random.Range(offsetedTransformDestination.x + rangeMin * signX, offsetedTransformDestination.x + range * signX),
-                    UnityEngine.Random.Range(offsetedTransformDestination.y + rangeMin * signY, offsetedTransformDestination.y + range * signY));
-                timer = Time.time + TimeRandomRange;
-                SetPathDestination(currentRandomTargetPosition);
-            }
-        } else {
-            currentRandomTargetPosition = new Vector2(offsetedTransformDestination.x, offsetedTransformDestination.y);
-        }
-    }
-
-    public void SetPathDestination(Vector2 newDestination) {
-        if (!navMeshAgent) return;
-        
-        // Only update path if destination has moved significantly AND enough time has passed
-        float distanceToNewDestination = Vector2.Distance(lastSetDestination, newDestination);
-        float timeSinceLastUpdate = Time.time - lastDestinationUpdateTime;
-        
-        if (distanceToNewDestination < DESTINATION_UPDATE_THRESHOLD && timeSinceLastUpdate < DESTINATION_UPDATE_TIME_THRESHOLD) {
-            return; // Skip pathfinding update for minor movements or too frequent updates
-        }
-        
-        navMeshAgent.isStopped = false;
-        navMeshAgent.SetDestination(newDestination);
-        lastSetDestination = newDestination;
-        lastDestinationUpdateTime = Time.time;
-        isPathDestinationSet = true;
-    }
-
-    private void ClearPathDestination() {
-        if (!navMeshAgent) return;
-        navMeshAgent.isStopped = true;
-        isPathDestinationSet = false;
-        //CurrentMethod = Method.NoMovement;
-    }
-
-    // Get smooth velocity for animation
-    public Vector2 GetSmoothedVelocity() {
-        Vector2 currentPosition = (Vector2)transform.position;
-        Vector2 rawVelocity = (currentPosition - lastFramePosition) / Time.deltaTime;
-        smoothVelocity = Vector2.Lerp(smoothVelocity, rawVelocity, VELOCITY_SMOOTHING);
-        lastFramePosition = currentPosition;
-        return smoothVelocity;
-    }
-
-    // Updating method when changed in the inspector
-    private void OnValidate() {
-        if (previousMethod != CurrentMethod) {
-            previousMethod = CurrentMethod;
-            ClearPathDestination();
-            navMeshAgent.isStopped = false;
-            isPathDestinationSet = true;
-        }
-    }
-
-    public void PrintValue(GameObject sender)
+    /// <summary>Walk to a fixed point and stand there.</summary>
+    public void MoveTo(Vector2 position)
     {
-        GetComponent<SpriteRenderer>().color = Color.black;
-        GetComponentInChildren<TextMeshPro>().text = (Time.time - StartTime).ToString("N2");
+        mode = Mode.Idle;
+        FollowTarget = null;
+        SetDestination(position, force: false);
     }
 
-    IEnumerator NewLocation(float t)
+    /// <summary>Continuously chase a moving target.</summary>
+    public void Follow(Transform target)
     {
-        currentRandomTargetPosition = new Vector2(UnityEngine.Random.Range(TransformDestination.position.x - range, TransformDestination.position.x + range), UnityEngine.Random.Range(TransformDestination.position.y - range, TransformDestination.position.y + range));
-        yield return new WaitForSeconds(t);
-        StartCoroutine(NewLocation(t));
+        if (target == null) { MoveTo(transform.position); return; }
+
+        bool newTarget = mode != Mode.Follow || FollowTarget != target;
+        mode = Mode.Follow;
+        FollowTarget = target;
+        SetDestination(target.position, force: newTarget);
+    }
+
+    /// <summary>Halt immediately.</summary>
+    public void Stop()
+    {
+        mode = Mode.Stopped;
+        FollowTarget = null;
+        if (agent != null && agent.isOnNavMesh) agent.isStopped = true;
+    }
+
+    private void SetDestination(Vector2 destination, bool force)
+    {
+        if (agent == null || !agent.isOnNavMesh) return;
+
+        // Throttle only while already moving; a stopped agent must always be restarted.
+        if (!force && !agent.isStopped
+            && Vector2.Distance(lastDestination, destination) < REPATH_MIN_DISTANCE
+            && Time.time - lastDestinationTime < REPATH_MIN_INTERVAL)
+        {
+            return;
+        }
+
+        agent.isStopped = false;
+        agent.SetDestination(destination);
+        lastDestination = destination;
+        lastDestinationTime = Time.time;
     }
 }
