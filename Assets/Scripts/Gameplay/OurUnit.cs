@@ -68,6 +68,7 @@ public abstract class OurUnit : MonoBehaviour
     private const float ACQUIRE_INTERVAL = 0.4f;     // how often an idle unit looks for a target
     private const float ATTACK_SLOT_GAP = 0.3f;      // distance from the body edge to the attack slots
     private const float FACE_LERP = 0.25f;
+    private const float SLOT_APPROACH_DISTANCE = 0.5f; // closer than range + this: go straight for the target, not the slot
 
     private NavMeshAgent agent;
     private Vector2 previousPosition;
@@ -185,6 +186,14 @@ public abstract class OurUnit : MonoBehaviour
     /// <summary>Where the unit goes once it has nothing to fight.</summary>
     protected abstract void ReturnToPost();
 
+    /// <summary>Called when <paramref name="attacker"/> hits this unit. Idle units fight back (WC3 retaliation).</summary>
+    public void OnDamagedBy(OurUnit attacker)
+    {
+        if (IsDead || IsAttacking || attacker == null || attacker.IsDead) return;
+        if (!IsTargetStillValid(attacker.statsManager)) return;
+        SetTarget(attacker.statsManager);
+    }
+
     // ---------------------------------------------------------------------
     // Orders
     // ---------------------------------------------------------------------
@@ -264,7 +273,11 @@ public abstract class OurUnit : MonoBehaviour
 
     private void Chase()
     {
-        if (attackKind == AttackKind.Melee && currentTarget.TryGetComponent<OurUnit>(out var targetUnit))
+        // Melee units approach via a slot around the target so they surround it. Once close,
+        // go straight for the target: a slot can be blocked or off the NavMesh, and a unit
+        // waiting for an unreachable slot would never get in range.
+        bool farAway = EdgeDistanceTo(currentTarget) > EffectiveRange + SLOT_APPROACH_DISTANCE;
+        if (attackKind == AttackKind.Melee && farAway && currentTarget.TryGetComponent<OurUnit>(out var targetUnit))
         {
             var slot = targetUnit.AvailableAttackerPosition(transform);
             Movement.Follow(slot != null ? slot : currentTarget.transform);
@@ -311,9 +324,11 @@ public abstract class OurUnit : MonoBehaviour
         }
     }
 
-    private static void ApplyDamage(StatsManager target, float damage)
+    private void ApplyDamage(StatsManager target, float damage)
     {
-        if (IsAlive(target)) target.TakeRawDamage(damage);
+        if (!IsAlive(target)) return;
+        target.TakeRawDamage(damage);
+        if (this != null && target.TryGetComponent<OurUnit>(out var victim)) victim.OnDamagedBy(this);
     }
 
     private void SetTarget(StatsManager target)

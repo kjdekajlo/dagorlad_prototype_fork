@@ -5,7 +5,7 @@ using UnityEngine;
 /// Prototype projectile for ranged units. Homes on its target (WC3 style: it can't miss
 /// unless the target dies first), optionally flying in an arc, and calls back on impact.
 ///
-/// Use <see cref="Fire"/>. If no prefab is given, a simple procedural "arrow" is created,
+/// Use <see cref="Fire"/>. If no prefab is given, a thin red line is created,
 /// so ranged units work without any art. To use real art, make a prefab with a
 /// SpriteRenderer + this component (sprite pointing right) and assign it on the unit.
 /// </summary>
@@ -83,7 +83,7 @@ public class Projectile : MonoBehaviour
 
         var renderer = go.AddComponent<SpriteRenderer>();
         renderer.sprite = GetDefaultSprite();
-        renderer.color = new Color(0.25f, 0.18f, 0.1f);
+        renderer.color = Color.red;
         if (shooterRenderer != null)
         {
             renderer.sortingLayerID = shooterRenderer.sortingLayerID;
@@ -97,13 +97,15 @@ public class Projectile : MonoBehaviour
     {
         if (defaultSprite != null) return defaultSprite;
 
-        // 8x2 px white bar -> 0.25 x 0.06 world units at 32 ppu, pointing right.
-        var texture = new Texture2D(8, 2) { filterMode = FilterMode.Point };
-        var pixels = new Color[16];
+        // Thin line: 16x1 px white texture -> 0.4 x 0.025 world units at 40 ppu, pointing right.
+        // Tinted red by the SpriteRenderer.
+        const int width = 16, height = 1;
+        var texture = new Texture2D(width, height) { filterMode = FilterMode.Point };
+        var pixels = new Color[width * height];
         for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.white;
         texture.SetPixels(pixels);
         texture.Apply();
-        defaultSprite = Sprite.Create(texture, new Rect(0, 0, 8, 2), new Vector2(0.5f, 0.5f), 32f);
+        defaultSprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 40f);
         return defaultSprite;
     }
 }

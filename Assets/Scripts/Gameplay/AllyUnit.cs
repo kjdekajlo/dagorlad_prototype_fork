@@ -1,11 +1,14 @@
 using UnityEngine;
 
 /// <summary>
-/// Player-controlled unit. Fights enemies inside its rally point's range and
-/// otherwise stands in formation at the flag.
+/// Player-controlled unit. Fights enemies in (or just around) its rally point's area.
+/// When a fight ends it stays where it is; it only re-forms when the flag is moved.
 /// </summary>
 public class AllyUnit : OurUnit
 {
+    [Tooltip("How far outside the flag's area a target may be before the unit gives up on it.")]
+    [SerializeField] private float areaSlack = 1f;
+
     private RallyPoint Rally => Rally_Point != null ? Rally_Point.GetComponent<RallyPoint>() : null;
 
     protected override StatsManager AcquireTarget()
@@ -16,16 +19,15 @@ public class AllyUnit : OurUnit
         return enemy != null && enemy.TryGetComponent<StatsManager>(out var stats) && IsAlive(stats) ? stats : null;
     }
 
-    // Allies only fight what is inside their flag's area; chasing ends when the enemy leaves it.
+    // Keep fighting while the target is in the flag's area or just outside it, so enemies
+    // pushed over the edge (or hitting us from just outside) aren't ignored.
     protected override bool IsTargetStillValid(StatsManager target)
     {
         var rally = Rally;
-        return rally != null && rally.EnemiesInRange.Contains(target.gameObject);
+        if (rally == null) return false;
+        return rally.EnemiesInRange.Contains(target.gameObject) || rally.IsInArea(target.transform.position, areaSlack);
     }
 
-    protected override void ReturnToPost()
-    {
-        var rally = Rally;
-        if (rally != null) Movement.MoveTo(rally.GetFormationPosition(this));
-    }
+    // Fight over: stand where we are. RallyPoint sends us back into formation when the flag moves.
+    protected override void ReturnToPost() => Movement.Stop();
 }

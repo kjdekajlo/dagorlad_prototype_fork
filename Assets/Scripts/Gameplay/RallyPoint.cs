@@ -51,23 +51,21 @@ public class RallyPoint : MonoBehaviour
         draggableMovement = GetComponent<DraggableMovement>();
         animators = GetComponentsInChildren<Animator>();
         GetComponentInChildren<OnTrigger>().AddEvent("Enter", owner == "Player" ? "Enemy" : "Player", (sender, collider) => {
-            if (EnemiesInRange.Find(x => x.name == collider.name) == null)
+            // Compare by object, not name: enemy names repeat across camps ("Enemy (1)" ...).
+            if (!EnemiesInRange.Contains(collider.gameObject))
             {
                 EnemiesInRange.Add(collider.gameObject);
                 ManageTargets();
-                //home.AttackEnemiesInRange();
             }
         });
         GetComponentInChildren<OnTrigger>().AddEvent("Exit", owner == "Player" ? "Enemy" : "Player", (sender, collider) => {
-            if (EnemiesInRange.Find(x => x.name == collider.name) != null)
+            if (EnemiesInRange.Remove(collider.gameObject))
             {
                 foreach (var x in currentArmy)
                 {
-                    x.RemoveAttacker(collider.transform);
+                    if (x != null) x.RemoveAttacker(collider.transform);
                 }
-                EnemiesInRange.Remove(collider.gameObject);
                 ManageTargets();
-                //home.StopAttackEnemiesInRange(collider.gameObject);
             }
         });
         ManageTargets();
@@ -108,17 +106,11 @@ public class RallyPoint : MonoBehaviour
     }
     public void ManageTargets()
     {
-        Debug.Log("Enemies : " + EnemiesInRange.Count + "  Troops : " + currentArmy.Count);
-        
-        if (EnemiesInRange.Count == 0)
-        {
-            foreach (OurUnit unit in currentArmy)
-            {
-                if (unit != null && !unit.IsDead) unit.StopAttack();
-            }
-            NotifyArmyOnCurrentLocation();
-            return;
-        }
+        EnemiesInRange.RemoveAll(x => x == null);
+
+        // Nothing to fight. Units drop targets on their own once they leave the area, and
+        // stay where they are afterwards (they only re-form when the flag is moved).
+        if (EnemiesInRange.Count == 0) return;
 
         // Auto-acquire: idle units pick the closest enemy; units already fighting keep their target.
         foreach (OurUnit unit in currentArmy)
@@ -169,6 +161,7 @@ public class RallyPoint : MonoBehaviour
         PlayPutRallyPointDownAnimation();
         Camera.main.GetComponent<Animator>().SetTrigger("SmallShake");
         ManageTargets();
+        MoveIdleUnitsToFormation();
     }
 
     public void PlayPutRallyPointDownAnimation() {
@@ -230,14 +223,27 @@ public class RallyPoint : MonoBehaviour
         return transform.position + ApplyRotationToVector(Vector3.right, angle) * FORMATION_RADIUS;
     }
 
-    private void NotifyArmyOnCurrentLocation() {
+    /// <summary>Units that aren't fighting walk to their formation spot (used when the flag is moved).</summary>
+    private void MoveIdleUnitsToFormation() {
         foreach (var unit in currentArmy) {
-            NotifyUnitOnLocation(unit, GetFormationPosition(unit));
+            if (unit != null && !unit.IsAttacking) NotifyUnitOnLocation(unit, GetFormationPosition(unit));
         }
     }
 
+    /// <summary>Radius of the flag's area (Point_Range trigger), in world units.</summary>
+    public float AreaRadius {
+        get {
+            var range = transform.Find("Point_Range");
+            if (range != null && range.TryGetComponent<CircleCollider2D>(out var col)) return col.radius * range.lossyScale.x;
+            return 3f;
+        }
+    }
+
+    public bool IsInArea(Vector2 position, float slack) =>
+        Vector2.Distance(position, transform.position) <= AreaRadius + slack;
+
     private void NotifyNewUnitOnLocation(OurUnit unit) {
-        NotifyUnitOnLocation(unit, transform.position);
+        NotifyUnitOnLocation(unit, GetFormationPosition(unit));
         unit.onSpawned -= NotifyNewUnitOnLocation;
     }
 }
