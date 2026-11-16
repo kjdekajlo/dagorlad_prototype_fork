@@ -833,7 +833,10 @@ MonoBehaviour:
     value: 400
   - type: 4
     value: 15
-  attackRange: 0.5
+  attackRange: 3.5
+  attackKind: 1
+  projectileSpeed: 4
+  projectileArc: 1
   home: {fileID: 0}
   Rally_Point: {fileID: 0}
   attackTimer: {fileID: 0}

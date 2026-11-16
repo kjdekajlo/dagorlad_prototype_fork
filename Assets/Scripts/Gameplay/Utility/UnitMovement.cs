@@ -6,9 +6,9 @@ using UnityEngine.AI;
 ///
 /// Three modes:
 ///  - Idle:    walk to the last point given via MoveTo(), then stand.
-///  - Follow:  keep chasing a moving Transform (e.g. an attack slot on an enemy).
-///             While HoldPosition is true the destination is not refreshed.
-///  - Stopped: agent halted (in melee range, dead, ...).
+///  - Follow:  keep chasing a moving Transform (an enemy or an attack slot around it).
+///  - Stopped: halted on the spot (fighting, dead, ...). Stopped units get a higher
+///             avoidance priority so moving units walk around them instead of shoving them.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class UnitMovement : MonoBehaviour
@@ -21,16 +21,14 @@ public class UnitMovement : MonoBehaviour
     /// <summary>Set from the MoveSpeed stat by StatsManager. Not applied to the agent yet (agent speed is fixed).</summary>
     public float Speed;
 
-    /// <summary>While following, freeze destination updates (used during an attack swing).</summary>
-    public bool HoldPosition;
-
     public Transform FollowTarget { get; private set; }
 
     // Agent tuning
     private const float AGENT_SPEED = 1f;
     private const float AGENT_ACCELERATION = 6f;
-    private const float AGENT_STOPPING_DISTANCE = 0.2f;
-    private const int AGENT_AVOIDANCE_PRIORITY = 50;
+    private const float AGENT_STOPPING_DISTANCE = 0.05f;
+    private const int AVOIDANCE_PRIORITY_MOVING = 50;
+    private const int AVOIDANCE_PRIORITY_STOPPED = 30; // lower = more important; movers go around
 
     // Path update throttling (reduces jitter from re-pathing every tick)
     private const float REPATH_MIN_DISTANCE = 0.3f;
@@ -51,19 +49,19 @@ public class UnitMovement : MonoBehaviour
             agent.speed = AGENT_SPEED;
             agent.acceleration = AGENT_ACCELERATION;
             agent.stoppingDistance = AGENT_STOPPING_DISTANCE;
-            agent.avoidancePriority = AGENT_AVOIDANCE_PRIORITY;
+            agent.avoidancePriority = AVOIDANCE_PRIORITY_MOVING;
         }
         lastDestination = transform.position;
     }
 
     private void FixedUpdate()
     {
-        if (mode != Mode.Follow || HoldPosition) return;
+        if (mode != Mode.Follow) return;
 
         if (FollowTarget == null)
         {
             // Target vanished (died / destroyed) - stand where we are.
-            mode = Mode.Idle;
+            Stop();
             return;
         }
 
@@ -73,15 +71,16 @@ public class UnitMovement : MonoBehaviour
     /// <summary>Walk to a fixed point and stand there.</summary>
     public void MoveTo(Vector2 position)
     {
+        bool wasStopped = mode == Mode.Stopped;
         mode = Mode.Idle;
         FollowTarget = null;
-        SetDestination(position, force: false);
+        SetDestination(position, force: wasStopped);
     }
 
     /// <summary>Continuously chase a moving target.</summary>
     public void Follow(Transform target)
     {
-        if (target == null) { MoveTo(transform.position); return; }
+        if (target == null) { Stop(); return; }
 
         bool newTarget = mode != Mode.Follow || FollowTarget != target;
         mode = Mode.Follow;
@@ -89,12 +88,16 @@ public class UnitMovement : MonoBehaviour
         SetDestination(target.position, force: newTarget);
     }
 
-    /// <summary>Halt immediately.</summary>
+    /// <summary>Halt immediately on the spot.</summary>
     public void Stop()
     {
         mode = Mode.Stopped;
         FollowTarget = null;
-        if (agent != null && agent.isOnNavMesh) agent.isStopped = true;
+        if (agent == null || !agent.isOnNavMesh) return;
+        agent.isStopped = true;
+        agent.velocity = Vector3.zero;
+        agent.ResetPath();
+        agent.avoidancePriority = AVOIDANCE_PRIORITY_STOPPED;
     }
 
     private void SetDestination(Vector2 destination, bool force)
@@ -110,6 +113,7 @@ public class UnitMovement : MonoBehaviour
         }
 
         agent.isStopped = false;
+        agent.avoidancePriority = AVOIDANCE_PRIORITY_MOVING;
         agent.SetDestination(destination);
         lastDestination = destination;
         lastDestinationTime = Time.time;

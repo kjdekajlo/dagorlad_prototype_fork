@@ -120,22 +120,15 @@ public class RallyPoint : MonoBehaviour
             return;
         }
 
+        // Auto-acquire: idle units pick the closest enemy; units already fighting keep their target.
         foreach (OurUnit unit in currentArmy)
         {
             if (unit == null || unit.IsDead) continue;
-
-            GameObject closestEnemy = FindClosestEnemy(unit.transform.position);
-            if (closestEnemy == null) continue;
-
-            unit.Attack(closestEnemy);
-
-            // No free attack slot (or a structure): at least walk toward it.
-            if (!unit.IsAttacking && unit.TryGetComponent<UnitMovement>(out var movement))
-                movement.MoveTo(closestEnemy.transform.position);
+            unit.Attack(FindClosestEnemy(unit.transform.position));
         }
     }
 
-    private GameObject FindClosestEnemy(Vector3 unitPosition)
+    public GameObject FindClosestEnemy(Vector3 unitPosition)
     {
         GameObject closestEnemy = null;
         float closestDistance = float.MaxValue;
@@ -143,6 +136,7 @@ public class RallyPoint : MonoBehaviour
         foreach (GameObject enemy in EnemiesInRange)
         {
             if (enemy == null) continue;
+            if (enemy.TryGetComponent<StatsManager>(out var stats) && !OurUnit.IsAlive(stats)) continue;
 
             float distance = Vector3.Distance(unitPosition, enemy.transform.position);
             if (distance < closestDistance)
@@ -226,11 +220,19 @@ public class RallyPoint : MonoBehaviour
         if (unit && !unit.IsDead && unit.TryGetComponent<UnitMovement>(out var unit_movement)) unit_movement.MoveTo(location);
     }
 
+    private const float FORMATION_RADIUS = 0.75f;
+
+    /// <summary>This unit's spot in the ring formation around the flag.</summary>
+    public Vector2 GetFormationPosition(OurUnit unit) {
+        int index = currentArmy.IndexOf(unit);
+        if (index < 0 || currentArmy.Count == 0) return transform.position;
+        float angle = index * (360f / currentArmy.Count);
+        return transform.position + ApplyRotationToVector(Vector3.right, angle) * FORMATION_RADIUS;
+    }
+
     private void NotifyArmyOnCurrentLocation() {
-        List<Vector3> positionList = GetPositionlistAround(transform.position, 0.75f, currentArmy.Count);
-        for (int i = 0; i < currentArmy.Count; i++) {
-            OurUnit unit = currentArmy[i];
-            NotifyUnitOnLocation(unit, positionList[i]);
+        foreach (var unit in currentArmy) {
+            NotifyUnitOnLocation(unit, GetFormationPosition(unit));
         }
     }
 
