@@ -9,6 +9,10 @@ using UnityEngine.AI;
 ///  - Follow:  keep chasing a moving Transform (an enemy or an attack slot around it).
 ///  - Stopped: halted on the spot (fighting, dead, ...). Stopped units get a higher
 ///             avoidance priority so moving units walk around them instead of shoving them.
+///
+/// Separation between units is done only by NavMesh avoidance: the Rigidbody2D is made
+/// kinematic (so physics never pushes units around) and the avoidance radius is matched to
+/// the unit's solid collider (so units keep their visual size apart).
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class UnitMovement : MonoBehaviour
@@ -40,9 +44,15 @@ public class UnitMovement : MonoBehaviour
 
     private void Awake()
     {
+        // Physics must not fight the agent: no shoving, no knock-back. Triggers still work.
+        var body = GetComponent<Rigidbody2D>();
+        body.bodyType = RigidbodyType2D.Kinematic;
+        body.velocity = Vector2.zero;
+
         agent = GetComponent<NavMeshAgent>();
         if (agent != null)
         {
+            agent.radius = Mathf.Max(agent.radius, SolidColliderRadius());
             agent.updateRotation = false;
             agent.updateUpAxis = false;
             agent.angularSpeed = 0f;
@@ -88,6 +98,14 @@ public class UnitMovement : MonoBehaviour
         SetDestination(target.position, force: newTarget);
     }
 
+    /// <summary>Remove the unit from movement and avoidance entirely (e.g. a corpse).</summary>
+    public void Disable()
+    {
+        Stop();
+        if (agent != null) agent.enabled = false;
+        enabled = false;
+    }
+
     /// <summary>Halt immediately on the spot.</summary>
     public void Stop()
     {
@@ -98,6 +116,15 @@ public class UnitMovement : MonoBehaviour
         agent.velocity = Vector3.zero;
         agent.ResetPath();
         agent.avoidancePriority = AVOIDANCE_PRIORITY_STOPPED;
+    }
+
+    private float SolidColliderRadius()
+    {
+        foreach (var col in GetComponents<CircleCollider2D>())
+        {
+            if (!col.isTrigger) return col.radius * Mathf.Abs(transform.lossyScale.x);
+        }
+        return 0f;
     }
 
     private void SetDestination(Vector2 destination, bool force)

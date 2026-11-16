@@ -66,9 +66,11 @@ public abstract class OurUnit : MonoBehaviour
     private const float MIN_MELEE_RANGE = 0.3f;      // melee always reaches at least this far
     private const float RANGE_BUFFER = 0.3f;         // once engaged, target must leave range + buffer before we chase again
     private const float ACQUIRE_INTERVAL = 0.4f;     // how often an idle unit looks for a target
-    private const float ATTACK_SLOT_GAP = 0.3f;      // distance from the body edge to the attack slots
+    private const float ATTACK_SLOT_GAP = 0.45f;     // distance from the body edge to the attack slots (~ an attacker's radius)
     private const float FACE_LERP = 0.25f;
-    private const float SLOT_APPROACH_DISTANCE = 0.5f; // closer than range + this: go straight for the target, not the slot
+    private const float CHASE_STUCK_TIME = 0.75f;    // no progress toward the target for this long: stop using the slot
+    private const float CHASE_PROGRESS_STEP = 0.05f;
+    private const float HELP_RADIUS = 3f;            // squad-mates this close join a fight when one of them is hit
 
     private NavMeshAgent agent;
     private Vector2 previousPosition;
@@ -77,6 +79,9 @@ public abstract class OurUnit : MonoBehaviour
     private float swingTimer;      // time until the current swing's hit lands
     private bool isSwinging;
     private bool isEngaged;        // standing in range of the target
+    private float bestChaseGap;    // closest we've got to the target while chasing
+    private float chaseStuckTimer;
+    private bool chaseDirect;      // slot unreachable: go straight for the target
     private float acquireTimer;
 
     // ---------------------------------------------------------------------
@@ -186,12 +191,33 @@ public abstract class OurUnit : MonoBehaviour
     /// <summary>Where the unit goes once it has nothing to fight.</summary>
     protected abstract void ReturnToPost();
 
-    /// <summary>Called when <paramref name="attacker"/> hits this unit. Idle units fight back (WC3 retaliation).</summary>
+    /// <summary>
+    /// Called when <paramref name="attacker"/> hits this unit. Idle units fight back, and idle
+    /// squad-mates nearby join in (WC3 retaliation + "call for help").
+    /// </summary>
     public void OnDamagedBy(OurUnit attacker)
     {
-        if (IsDead || IsAttacking || attacker == null || attacker.IsDead) return;
+        if (IsDead || attacker == null || attacker.IsDead) return;
+        RespondTo(attacker);
+        CallForHelp(attacker);
+    }
+
+    private void RespondTo(OurUnit attacker)
+    {
+        if (IsDead || IsAttacking) return;
         if (!IsTargetStillValid(attacker.statsManager)) return;
         SetTarget(attacker.statsManager);
+    }
+
+    private void CallForHelp(OurUnit attacker)
+    {
+        if (Rally_Point == null || !Rally_Point.TryGetComponent<RallyPoint>(out var rally)) return;
+        foreach (var mate in rally.currentArmy)
+        {
+            if (mate == null || mate == this) continue;
+            if (Vector2.Distance(mate.transform.position, transform.position) > HELP_RADIUS) continue;
+            mate.RespondTo(attacker);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -252,16 +278,18 @@ public abstract class OurUnit : MonoBehaviour
         }
 
         float reach = EffectiveRange + (isEngaged ? RANGE_BUFFER : 0f);
-        if (EdgeDistanceTo(currentTarget) > reach)
+        float gap = EdgeDistanceTo(currentTarget);
+        if (gap > reach)
         {
             isEngaged = false;
-            Chase();
+            Chase(gap, dt);
             return;
         }
 
         if (!isEngaged)
         {
             isEngaged = true;
+            ResetChase();
             Movement.Stop();
         }
         FaceTarget();
@@ -271,13 +299,23 @@ public abstract class OurUnit : MonoBehaviour
 
     private float EffectiveRange => attackKind == AttackKind.Melee ? Mathf.Max(attackRange, MIN_MELEE_RANGE) : attackRange;
 
-    private void Chase()
+    private void Chase(float gap, float dt)
     {
-        // Melee units approach via a slot around the target so they surround it. Once close,
-        // go straight for the target: a slot can be blocked or off the NavMesh, and a unit
-        // waiting for an unreachable slot would never get in range.
-        bool farAway = EdgeDistanceTo(currentTarget) > EffectiveRange + SLOT_APPROACH_DISTANCE;
-        if (attackKind == AttackKind.Melee && farAway && currentTarget.TryGetComponent<OurUnit>(out var targetUnit))
+        // Track progress: if we stop getting closer (slot blocked by other units, off the
+        // NavMesh, ...) give up on the slot and go straight for the target.
+        if (gap < bestChaseGap - CHASE_PROGRESS_STEP)
+        {
+            bestChaseGap = gap;
+            chaseStuckTimer = 0f;
+        }
+        else if ((chaseStuckTimer += dt) > CHASE_STUCK_TIME)
+        {
+            chaseDirect = true;
+        }
+
+        // Melee units approach via a free slot around the target so they surround it
+        // instead of all piling onto the same point.
+        if (attackKind == AttackKind.Melee && !chaseDirect && currentTarget.TryGetComponent<OurUnit>(out var targetUnit))
         {
             var slot = targetUnit.AvailableAttackerPosition(transform);
             Movement.Follow(slot != null ? slot : currentTarget.transform);
@@ -286,6 +324,13 @@ public abstract class OurUnit : MonoBehaviour
         {
             Movement.Follow(currentTarget.transform);
         }
+    }
+
+    private void ResetChase()
+    {
+        bestChaseGap = float.MaxValue;
+        chaseStuckTimer = 0f;
+        chaseDirect = false;
     }
 
     private void StartSwing()
@@ -337,6 +382,7 @@ public abstract class OurUnit : MonoBehaviour
         ReleaseSlotOnTarget();
         currentTarget = target;
         isEngaged = false;
+        ResetChase();
         status = Utility.UnitStatus.Attacking;
     }
 
@@ -417,7 +463,7 @@ public abstract class OurUnit : MonoBehaviour
     private void HandleDeath(GameObject sender)
     {
         ClearTarget();
-        Movement.Stop();
+        Movement.Disable();   // corpse: no movement, no NavMesh avoidance obstacle
         status = Utility.UnitStatus.Dead;
         UnitAnimator.SetBool("isDead", true);
         foreach (var col in GetComponents<CircleCollider2D>()) col.enabled = false;
