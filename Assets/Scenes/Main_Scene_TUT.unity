@@ -26835,7 +26835,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 21c89554facd24e988537bc624dc87aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  owner: 
+  team: 0
   locations: []
   baseFlag: {fileID: 0}
   flagEnter: 0
@@ -30884,7 +30884,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 21c89554facd24e988537bc624dc87aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  owner: Enemy
+  team: 2
   locations: []
   baseFlag: {fileID: 2065398855}
   flagEnter: 0
@@ -32397,7 +32397,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 21c89554facd24e988537bc624dc87aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  owner: Enemy
+  team: 2
   locations: []
   baseFlag: {fileID: 1593967651}
   flagEnter: 0

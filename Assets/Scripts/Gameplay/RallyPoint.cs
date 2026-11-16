@@ -5,7 +5,7 @@ using UnityEngine.EventSystems;
 
 public class RallyPoint : MonoBehaviour
 {
-    public string owner;
+    public Team team;
     Vector3 mousePositionOffset;
     DraggableMovement draggableMovement;
     public OnTrigger onTrigger;
@@ -50,7 +50,8 @@ public class RallyPoint : MonoBehaviour
 
         draggableMovement = GetComponent<DraggableMovement>();
         animators = GetComponentsInChildren<Animator>();
-        GetComponentInChildren<OnTrigger>().AddEvent("Enter", owner == "Player" ? "Enemy" : "Player", (sender, collider) => {
+        string hostileTag = Teams.Tag(Teams.Opponent(team));
+        GetComponentInChildren<OnTrigger>().AddEvent("Enter", hostileTag, (sender, collider) => {
             // Compare by object, not name: enemy names repeat across camps ("Enemy (1)" ...).
             if (!EnemiesInRange.Contains(collider.gameObject))
             {
@@ -58,7 +59,7 @@ public class RallyPoint : MonoBehaviour
                 ManageTargets();
             }
         });
-        GetComponentInChildren<OnTrigger>().AddEvent("Exit", owner == "Player" ? "Enemy" : "Player", (sender, collider) => {
+        GetComponentInChildren<OnTrigger>().AddEvent("Exit", hostileTag, (sender, collider) => {
             if (EnemiesInRange.Remove(collider.gameObject))
             {
                 foreach (var x in currentArmy)
@@ -72,9 +73,9 @@ public class RallyPoint : MonoBehaviour
     }
     private void Update()
     {
-        if (owner == "Enemy" && currentArmy.Count == 0)
+        if (team == Team.Enemy && currentArmy.Count == 0)
         {
-            if(home != null) home.GetComponent<Base>().owner = "";
+            if (home != null) home.GetComponent<Base>().team = Team.Neutral;
             GameManager.Instance.enemies.Remove(this);
             if(GameManager.Instance.enemies.Count == 0)
             {

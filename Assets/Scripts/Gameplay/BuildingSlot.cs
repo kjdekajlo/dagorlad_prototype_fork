@@ -135,7 +135,7 @@ public class BuildingSlot : MonoBehaviour
 
         upgradeItem = Instantiate(upgradePrefab.gameObject, new Vector3(-5, -10, 0), Quaternion.identity);
 
-        upgradeItem.tag = "Player";
+        upgradeItem.tag = Teams.Tag(Team.Player);
         upgradeItem.name += upgradeItem.GetInstanceID().ToString();
 
         Status = Utility.LocationStatus.Training;
@@ -161,9 +161,9 @@ public class BuildingSlot : MonoBehaviour
     {
         Debug.Log("Started spawning ...");
         trainingUnit = Instantiate(productionList[0], new Vector3(transform.position.x, transform.position.y, 0), Quaternion.identity);
-        trainingUnit.tag = "Player";
+        trainingUnit.tag = Teams.Tag(Team.Player);
         trainingUnit.name += trainingUnit.GetInstanceID().ToString();
-        trainingUnit.GetComponent<StatsManager>().owner = Player.Instance.PlayerName;
+        trainingUnit.GetComponent<StatsManager>().team = Team.Player;
         trainingUnit.GetComponent<OurUnit>().status = Utility.UnitStatus.GoingToFlag;
         trainingUnit.GetComponent<OurUnit>().Rally_Point = building.GetComponent<Structure>().Rally_Point.transform;
         trainingUnit.GetComponent<OurUnit>().home = building.GetComponent<Structure>();
@@ -201,9 +201,9 @@ public class BuildingSlot : MonoBehaviour
 
         Debug.Log("Started spawning ...");
         trainingUnit = Instantiate(productionList[0], new Vector3(transform.position.x, transform.position.y, 0), Quaternion.identity);
-        trainingUnit.tag = "Player";
+        trainingUnit.tag = Teams.Tag(Team.Player);
         trainingUnit.name += trainingUnit.GetInstanceID().ToString();
-        trainingUnit.GetComponent<StatsManager>().owner = Player.Instance.PlayerName;
+        trainingUnit.GetComponent<StatsManager>().team = Team.Player;
         trainingUnit.GetComponent<OurUnit>().status = Utility.UnitStatus.GoingToFlag;
         trainingUnit.GetComponent<OurUnit>().Rally_Point = building.GetComponent<Structure>().Rally_Point.transform;
         trainingUnit.GetComponent<OurUnit>().home = building.GetComponent<Structure>();
@@ -252,10 +252,10 @@ public class BuildingSlot : MonoBehaviour
         {
             buildingStructure.Rally_Point = Instantiate(GameManager.Instance.flagPrefab, transform.position + new Vector3(0.5f, 0.5f, 0f), Quaternion.identity);
             buildingStructure.Rally_Point.GetComponent<DraggableMovement>().SetDestination(transform.position + new Vector3(0.5f, 0.5f, 0f));
-            building.GetComponent<StatsManager>().owner = Player.Instance.PlayerName;
+            building.GetComponent<StatsManager>().team = Team.Player;
 
             buildingStructure.Rally_Point.GetComponent<RallyPoint>().home = buildingStructure.gameObject;
-            buildingStructure.Rally_Point.GetComponent<RallyPoint>().owner = Player.Instance.PlayerName;
+            buildingStructure.Rally_Point.GetComponent<RallyPoint>().team = Team.Player;
             buildingStructure.Rally_Point.GetComponent<Animator>().enabled = false;
             buildingStructure.Rally_Point.GetComponent<SpriteRenderer>().sprite = UIManager.Instance.currentBaseID == 3 ? buildingStructure.Flag3 : buildingStructure.Flag1;
             buildingStructure.Rally_Point.GetComponent<Animator>().enabled = true;

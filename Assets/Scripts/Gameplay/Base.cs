@@ -3,7 +3,7 @@ using UnityEngine;
 
 public class Base : MonoBehaviour
 {
-    public string owner;
+    public Team team;
     public List<BuildingSlot> locations = new();
     public GameObject baseFlag;
 
@@ -15,23 +15,23 @@ public class Base : MonoBehaviour
     {
         if (baseFlag)
         {
-            baseFlag.GetComponent<OnTrigger>().AddEvent("Stay", "Player", (sender, collider) => {
-                if (owner == "" && isLocked == true)
+            baseFlag.GetComponent<OnTrigger>().AddEvent("Stay", Teams.Tag(Team.Player), (sender, collider) => {
+                if (team == Team.Neutral && isLocked == true)
                 {
                     isLocked = false;
                     flagEnter = Time.time;
                 }
                 if (Time.time - flagEnter > stayPeriodToUnlock && isLocked == false)
                 {
-                    owner = "Player";
+                    team = Team.Player;
                     UIManager.Instance.UnlockBase(gameObject.name);
                     sender.GetComponent<Animator>().SetTrigger("RISE");
                     sender.transform.GetChild(0).gameObject.SetActive(true);
                     isLocked = true;
                 }
             });
-            baseFlag.GetComponent<OnTrigger>().AddEvent("Exit", "Player", (sender, collider) => {
-                if (owner == "") flagEnter = Time.time;
+            baseFlag.GetComponent<OnTrigger>().AddEvent("Exit", Teams.Tag(Team.Player), (sender, collider) => {
+                if (team == Team.Neutral) flagEnter = Time.time;
             });
         }
     }

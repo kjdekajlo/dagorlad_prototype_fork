@@ -347,7 +347,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d32a87ffff49c4ca4859f27e68c85cd7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  owner: Enemy
+  team: 2
   onTrigger: {fileID: 0}
   home: {fileID: 0}
   currentArmy:

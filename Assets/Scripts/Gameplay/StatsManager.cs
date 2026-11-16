@@ -5,7 +5,7 @@ using UnityEngine;
 
 public class StatsManager : MonoBehaviour
 {
-    public string owner;
+    public Team team;
     public Stat[] stats;
     public TextMeshPro DisplayHP;
     UnitMovement moveTo;
@@ -43,7 +43,7 @@ public class StatsManager : MonoBehaviour
                 health.value -= value;
             }
         }
-        else Debug.Log("Couldn't find health stat of : " + name + " of " + owner);
+        else Debug.Log("Couldn't find health stat of : " + name + " of " + team);
         if (GetComponent<OurUnit>()) GetComponent<OurUnit>().Bleed();
         return health.value > 0 ? false : true;
     }

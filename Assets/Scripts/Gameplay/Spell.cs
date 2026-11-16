@@ -24,34 +24,23 @@ public class Spell : MonoBehaviour
     private void Start()
     {
         onTrigger = GetComponent<OnTrigger>();
-        onTrigger.AddEvent("Enter", "Enemy", (sender, collider) => {
-            if (unitsInRage.Find(x => x.name == collider.name) == null)
-            {
-                unitsInRage.Add(collider.gameObject);
-                Effect(collider.gameObject);
-            }
-        });
-        onTrigger.AddEvent("Exit", "Enemy", (sender, collider) => {
-            if (unitsInRage.Find(x => x.name == collider.name) != null)
-            {
-                unitsInRage.Remove(collider.gameObject);
-                Effect(collider.gameObject, true);
-            }
-        });
-        onTrigger.AddEvent("Enter", "Player", (sender, collider) => {
-            if (unitsInRage.Find(x => x.name == collider.name) == null)
-            {
-                unitsInRage.Add(collider.gameObject);
-                Effect(collider.gameObject);
-            }
-        });
-        onTrigger.AddEvent("Exit", "Player", (sender, collider) => {
-            if (unitsInRage.Find(x => x.name == collider.name) != null)
-            {
-                unitsInRage.Remove(collider.gameObject);
-                Effect(collider.gameObject, true);
-            }
-        });
+        foreach (var team in new[] { Team.Player, Team.Enemy })
+        {
+            string tag = Teams.Tag(team);
+            onTrigger.AddEvent("Enter", tag, (sender, collider) => {
+                if (!unitsInRage.Contains(collider.gameObject))
+                {
+                    unitsInRage.Add(collider.gameObject);
+                    Effect(collider.gameObject);
+                }
+            });
+            onTrigger.AddEvent("Exit", tag, (sender, collider) => {
+                if (unitsInRage.Remove(collider.gameObject))
+                {
+                    Effect(collider.gameObject, true);
+                }
+            });
+        }
         On_SpellStart += (spell) => { GameManager.Instance.GetComponent<AudioManager>().Play(spell.name.Replace("(Clone)","") + "_On_SpellStart"); };
         if (gameObject.name.Contains("Reveal"))
         {
@@ -67,7 +56,7 @@ public class Spell : MonoBehaviour
     {
         if(duration != 0 && hasStarted)
         {
-            if (unit.CompareTag("Enemy"))
+            if (IsEnemy(unit))
             {
                 unit.GetComponent<StatsManager>().UpdateStats(affectedStatsEnemies, undo);
             }
@@ -84,7 +73,7 @@ public class Spell : MonoBehaviour
         if (!AnimationTrigger.Equals("")) Camera.main.GetComponent<Animator>().SetTrigger(AnimationTrigger);
         foreach (var x in unitsInRage)
         {
-            if(x.CompareTag("Enemy"))
+            if(IsEnemy(x))
             {
                 x.GetComponent<StatsManager>().UpdateStats(affectedStatsEnemies);
             }
@@ -102,7 +91,7 @@ public class Spell : MonoBehaviour
                 {
                     foreach(var y in unitsInRage)
                     {
-                        if (y.CompareTag("Enemy"))
+                        if (IsEnemy(y))
                         {
                             //y.GetComponent<StatsManager>().UpdateStats(affectedStatsEnemies, true);
                         }
@@ -122,7 +111,7 @@ public class Spell : MonoBehaviour
         {
             if (duration != 0 && hasStarted && isBuff)
             {
-                if (x.CompareTag("Enemy"))
+                if (IsEnemy(x))
                 {
                     x.GetComponent<StatsManager>().UpdateStats(affectedStatsEnemies, true);
                 }
@@ -133,4 +122,7 @@ public class Spell : MonoBehaviour
             }
         }
     }
+
+    // Spells are cast by the player: "enemy" means the Enemy team.
+    private static bool IsEnemy(GameObject unit) => Teams.Of(unit) == Team.Enemy;
 }
